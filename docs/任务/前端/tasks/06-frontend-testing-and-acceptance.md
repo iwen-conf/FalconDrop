@@ -10,6 +10,14 @@
 
 为前端首期交付建立可重复验证标准，覆盖登录、照片分组、删除、系统信息展示和 WebSocket 增量刷新。
 
+## 测试工具
+
+- 单元和组件测试：Vitest + React Testing Library。
+- API mock：MSW 或轻量 mock fetch，二选一并保持一致。
+- 路由测试：React Router memory router。
+- Query 测试：每个测试创建独立 QueryClient，避免缓存串扰。
+- WebSocket 测试：mock `WebSocket`，覆盖连接、消息、错误、关闭和重连。
+
 ## 单元测试
 
 - 登录表单：必填、错误密码、成功跳转。
@@ -18,6 +26,9 @@
 - 同名照片：同名不同 hash 不被前端去重。
 - 删除流程：确认、成功移除、失败保留。
 - API 错误：401、404、存储错误、FTP 端口错误。
+- Zod schema：系统账号、FTP 账号，尤其匿名关闭时必填。
+- API client：204、错误响应、网络错误、requestId。
+- WebSocket 事件解析：未知事件、坏 payload 不破坏页面。
 
 ## 组件测试
 
@@ -27,6 +38,17 @@
 - 系统信息卡片。
 - 匿名 FTP 风险提示。
 - PASV 和存储状态提示。
+- FTP 启动/停止按钮 loading 和错误提示。
+- 系统账号和 FTP 账号表单校验。
+- WebSocket 断线提示和重连后刷新触发。
+
+## 可访问性与文案检查
+
+- 表单输入有 label。
+- 图标按钮有 accessible name 或 tooltip。
+- 删除确认文案明确说明删除本地文件和数据库记录。
+- 页面文案除允许技术名词外为中文。
+- 不出现 Android、Windows、Tauri、AI、FTPS、RBAC、对象存储入口文案。
 
 ## E2E 验收路径
 
@@ -39,6 +61,14 @@
 7. 刷新页面，确认照片仍存在。
 8. 删除照片，确认 UI 移除。
 9. 再次刷新，确认照片不再出现。
+
+## 视觉验收要点
+
+- `/photos` 和 `/system` 在桌面和窄屏下无文字重叠。
+- 照片网格 loading 和图片加载不会造成明显布局跳动。
+- 系统页状态块信息密度适中，没有卡片嵌套卡片。
+- 匿名 FTP 风险提示醒目但不遮挡主操作。
+- 预览层在窄屏下文件名、hash、按钮不溢出。
 
 ## 验收命令
 
@@ -54,6 +84,8 @@ npm run build
 - 两个主页面中文文案完整。
 - 没有 Android、Windows、Tauri、AI、FTPS、RBAC 入口。
 - E2E 主路径可复现。
+- React Router、TanStack Query、Zustand、React Hook Form、Zod、Framer Motion 均有对应使用和测试覆盖。
+- WebSocket 断线重连后能通过 REST 快照补偿。
 
 ## 后续 P1 测试
 
