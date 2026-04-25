@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -103,7 +105,7 @@ func (m *Manager) Start(ctx context.Context) (Status, error) {
 		Auth:         &ftpAuth{store: m.store},
 		PassivePorts: m.cfg.FTPPassivePorts,
 		PublicIp:     m.cfg.FTPPublicHost,
-		Logger:       &ftpLogger{},
+		Logger:       &ftpLogger{stats: &m.status},
 	}
 	srv := server.NewServer(opts)
 	m.server = srv
@@ -117,6 +119,9 @@ func (m *Manager) Start(ctx context.Context) (Status, error) {
 		if err := srv.ListenAndServe(); err != nil {
 			m.mu.Lock()
 			defer m.mu.Unlock()
+			if err != server.ErrServerClosed {
+				m.status.LastFile = "error:" + err.Error()
+			}
 			m.running = false
 			m.status.IsRunning = false
 			m.status.UpdatedAt = time.Now().UTC()
@@ -350,7 +355,7 @@ func (d *driverInstance) PutFile(destPath string, data io.Reader, appendData boo
 		RelativePath:     strings.TrimPrefix(destPath, "/"),
 		TempPath:         tmpPath,
 		Size:             size,
-		RemoteAddr:       "",
+		RemoteAddr:       extractRemoteAddrFromDataReader(data),
 		CompletedAt:      time.Now().UTC(),
 	}
 	if d.onUpload != nil {
@@ -364,6 +369,25 @@ func (d *driverInstance) PutFile(destPath string, data io.Reader, appendData boo
 	d.stats.LastFile = base
 	d.stats.UpdatedAt = time.Now().UTC()
 	return size, nil
+}
+
+func extractRemoteAddrFromDataReader(data io.Reader) string {
+	type dataAddr interface {
+		Host() string
+		Port() int
+	}
+	if v, ok := data.(dataAddr); ok {
+		host := strings.TrimSpace(v.Host())
+		port := v.Port()
+		if host == "" {
+			return ""
+		}
+		if port > 0 && port <= 65535 {
+			return net.JoinHostPort(host, strconv.Itoa(port))
+		}
+		return host
+	}
+	return ""
 }
 
 type fileInfo struct {

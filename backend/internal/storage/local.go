@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -23,6 +24,8 @@ type Local struct {
 	root string
 	tmp  string
 }
+
+var renameFile = os.Rename
 
 func NewLocal(root, tmp string) *Local {
 	return &Local{
@@ -105,7 +108,60 @@ func (l *Local) MoveFile(tempPath, finalFullPath string) error {
 	if err := os.MkdirAll(filepath.Dir(finalFullPath), 0o755); err != nil {
 		return err
 	}
-	return os.Rename(tempPath, finalFullPath)
+	err := renameFile(tempPath, finalFullPath)
+	if err == nil {
+		return nil
+	}
+	if !isCrossDeviceLink(err) {
+		return err
+	}
+
+	// Docker volumes may place temp and storage on different devices.
+	// Fall back to copy + atomic rename within destination filesystem.
+	dstDir := filepath.Dir(finalFullPath)
+	tmpDst, err := os.CreateTemp(dstDir, ".move-*")
+	if err != nil {
+		return err
+	}
+	tmpDstPath := tmpDst.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpDstPath)
+		}
+	}()
+
+	src, err := os.Open(tempPath)
+	if err != nil {
+		_ = tmpDst.Close()
+		return err
+	}
+	defer src.Close()
+
+	if _, err := io.Copy(tmpDst, src); err != nil {
+		_ = tmpDst.Close()
+		return err
+	}
+	if err := tmpDst.Sync(); err != nil {
+		_ = tmpDst.Close()
+		return err
+	}
+	if err := tmpDst.Close(); err != nil {
+		return err
+	}
+
+	if srcInfo, statErr := os.Stat(tempPath); statErr == nil {
+		_ = os.Chmod(tmpDstPath, srcInfo.Mode().Perm())
+	}
+	if err := os.Rename(tmpDstPath, finalFullPath); err != nil {
+		return err
+	}
+	if err := os.Remove(tempPath); err != nil {
+		return err
+	}
+
+	cleanup = false
+	return nil
 }
 
 func (l *Local) Remove(fullPath string) error {
@@ -114,6 +170,14 @@ func (l *Local) Remove(fullPath string) error {
 
 func (l *Local) Open(fullPath string) (*os.File, error) {
 	return os.Open(fullPath)
+}
+
+func isCrossDeviceLink(err error) bool {
+	var linkErr *os.LinkError
+	if errors.As(err, &linkErr) {
+		return errors.Is(linkErr.Err, syscall.EXDEV)
+	}
+	return errors.Is(err, syscall.EXDEV)
 }
 
 func (l *Local) WriteTemp(name string, src io.Reader) (string, int64, error) {

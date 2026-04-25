@@ -1,10 +1,31 @@
 package ftpserver
 
-import "log/slog"
+import (
+	"log/slog"
+	"sync/atomic"
+	"time"
+)
 
-type ftpLogger struct{}
+type ftpLogger struct {
+	stats *Status
+}
 
 func (l *ftpLogger) Print(sessionID string, message interface{}) {
+	if l.stats != nil {
+		if msg, ok := message.(string); ok {
+			switch msg {
+			case "Connection Established":
+				atomic.AddInt64(&l.stats.ConnectedClients, 1)
+				l.stats.UpdatedAt = time.Now().UTC()
+			case "Connection Terminated":
+				next := atomic.AddInt64(&l.stats.ConnectedClients, -1)
+				if next < 0 {
+					atomic.StoreInt64(&l.stats.ConnectedClients, 0)
+				}
+				l.stats.UpdatedAt = time.Now().UTC()
+			}
+		}
+	}
 	slog.Info("ftp", "sessionId", sessionID, "message", message)
 }
 
