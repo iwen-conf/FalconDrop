@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: falcondrop-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-falcondrop}
+      POSTGRES_USER: ${POSTGRES_USER:-falcondrop}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-falcondrop} -d ${POSTGRES_DB:-falcondrop}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  app:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+    container_name: falcondrop-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://falcondrop:change-me@postgres:5432/falcondrop?sslmode=disable}
+      HTTP_ADDR: ${HTTP_ADDR:-:8080}
+      STORAGE_ROOT: ${STORAGE_ROOT:-/data/falcondrop/uploads}
+      TMP_ROOT: ${TMP_ROOT:-/data/falcondrop/tmp}
+      FTP_HOST: ${FTP_HOST:-0.0.0.0}
+      FTP_PUBLIC_HOST: ${FTP_PUBLIC_HOST:-}
+      FTP_PORT: ${FTP_PORT:-2121}
+      FTP_PASSIVE_PORTS: ${FTP_PASSIVE_PORTS:-30000-30009}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-falcondrop_session}
+      SESSION_TTL: ${SESSION_TTL:-24h}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      DEFAULT_SYSTEM_USERNAME: ${DEFAULT_SYSTEM_USERNAME:-admin}
+      DEFAULT_SYSTEM_PASSWORD: ${DEFAULT_SYSTEM_PASSWORD:-change-me}
+      DEFAULT_FTP_USERNAME: ${DEFAULT_FTP_USERNAME:-camera}
+      DEFAULT_FTP_PASSWORD: ${DEFAULT_FTP_PASSWORD:-change-me}
+      DEFAULT_FTP_ANONYMOUS_ENABLED: ${DEFAULT_FTP_ANONYMOUS_ENABLED:-true}
+      APP_VERSION: ${APP_VERSION:-dev}
+      APP_BUILD_HASH: ${APP_BUILD_HASH:-unknown}
+    ports:
+      - "8080:8080"
+      - "2121:2121"
+      - "30000-30009:30000-30009"
+    volumes:
+      - falcondrop-uploads:/data/falcondrop/uploads
+      - falcondrop-tmp:/data/falcondrop/tmp
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  falcondrop-uploads:
+  falcondrop-tmp:
